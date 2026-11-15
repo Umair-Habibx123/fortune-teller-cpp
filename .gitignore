@@ -1,0 +1,15 @@
+# Build output
+/build/
+*.exe
+*.o
+*.obj
+
+# IDE
+.vs/
+.vscode/
+
+# Local data (saved readings and the people book live outside the repo,
+# but never commit them if FORTUNE_TELLER_HOME points here)
+/fortune-teller-data/
+records.txt
+*.tsv
