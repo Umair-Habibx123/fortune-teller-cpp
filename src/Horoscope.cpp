@@ -5,20 +5,33 @@
 #include <fstream>
 #include <sstream>
 
-#include "Http.hpp"
+#include "Api.hpp"
 #include "Json.hpp"
 
 namespace fs = std::filesystem;
 
 const char* HoroscopeService::kAttribution = "Powered by FreeHoroscopeAPI - https://freehoroscopeapi.com";
 
-const char* periodName(Period p) { return p == Period::Daily ? "daily" : "weekly"; }
+const char* periodName(Period p) {
+    switch (p) {
+        case Period::Daily: return "daily";
+        case Period::Weekly: return "weekly";
+        case Period::Monthly: return "monthly";
+    }
+    return "daily";
+}
 
 namespace {
 
-// A cached reading is current if it was fetched today (daily) or this ISO week (weekly).
+// A cached reading is current if it was fetched today (daily), this ISO week
+// (weekly) or this calendar month (monthly).
 bool isCurrent(const Reading& r, const Date& today) {
-    return r.period == Period::Daily ? r.fetchedOn == today : isoWeek(r.fetchedOn) == isoWeek(today);
+    switch (r.period) {
+        case Period::Daily: return r.fetchedOn == today;
+        case Period::Weekly: return isoWeek(r.fetchedOn) == isoWeek(today);
+        case Period::Monthly: return r.fetchedOn.year == today.year && r.fetchedOn.month == today.month;
+    }
+    return false;
 }
 
 std::string trim(std::string s) {
@@ -33,8 +46,11 @@ std::string trim(std::string s) {
 HoroscopeService::HoroscopeService(fs::path cacheDir) : dir_(std::move(cacheDir)) {}
 
 std::string HoroscopeService::url(Sign sign, Period period) {
-    return std::string("https://freehoroscopeapi.com/api/v1/get-horoscope/") + periodName(period) +
-           "?sign=" + info(sign).name;
+    return std::string(api::kBase) + path(sign, period);
+}
+
+std::string HoroscopeService::path(Sign sign, Period period) {
+    return std::string("/api/v1/get-horoscope/") + periodName(period) + "?sign=" + info(sign).name;
 }
 
 fs::path HoroscopeService::file(Sign sign, Period period) const {
@@ -89,28 +105,25 @@ HoroscopeResult HoroscopeService::get(Sign sign, Period period, const Date& toda
         return result;
     }
 
-    // Not cached for this day/week yet: download a fresh one.
-    const HttpResult http = httpGet(url(sign, period));
-    if (http.ok()) {
-        auto text = jsonString(http.body, "horoscope");
-        auto label = jsonString(http.body, "date");
-        if (text && !trim(*text).empty()) {
-            Reading fresh;
-            fresh.sign = sign;
-            fresh.period = period;
-            fresh.label = label ? *label : today.iso();
-            fresh.text = trim(*text);
-            fresh.fetchedOn = today;
-            save(fresh);
-            result.reading = fresh;
+    // Not cached for this day/week/month yet: download a fresh one.
+    const api::Response fresh = api::get(path(sign, period));
+    if (fresh.json) {
+        const Json& data = (*fresh.json)["data"];
+        const std::string text = trim(data["horoscope"].str());
+        if (!text.empty()) {
+            Reading reading;
+            reading.sign = sign;
+            reading.period = period;
+            reading.label = data["date"].str(today.iso());
+            reading.text = text;
+            reading.fetchedOn = today;
+            save(reading);
+            result.reading = reading;
             return result;
         }
         result.problem = "the horoscope service sent an answer without a reading";
-    } else if (http.status != 0) {
-        auto message = jsonString(http.body, "error");
-        result.problem = "the horoscope service answered HTTP " + std::to_string(http.status) + (message ? ": " + *message : "");
     } else {
-        result.problem = "no internet connection (" + http.error + ")";
+        result.problem = fresh.problem;
     }
 
     // Couldn't download: fall back to the last saved reading, clearly marked as old.

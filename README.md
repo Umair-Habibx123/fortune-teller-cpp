@@ -1,7 +1,7 @@
-<h1 align="center">🔮 Fortune Teller: A First-Semester Project, Grown Up</h1>
+<h1 align="center">Fortune Teller: A First-Semester Project, Grown Up</h1>
 
 <p align="center">
-  <em>My first-semester C program, rebuilt in modern C++17 with real horoscopes from the internet.</em>
+  <em>My first-semester C program, rebuilt in modern C++17 with live horoscopes, tarot, planetary positions and a daily Panchang.</em>
 </p>
 
 <p align="center">
@@ -24,28 +24,52 @@ with. It ran on `gotoxy()`, `system("cls")`, busy-wait loops for delays and a
 
 The original is kept, untouched, in [`legacy/`](legacy/). The version you build
 today lives in [`src/`](src/). It keeps every feature and every line of the
-original writing, and adds **real horoscopes that update every week**.
+original writing, and adds **live data that updates by itself**: horoscopes,
+tarot, where the planets are, sunrise and moonrise, and the Vedic Panchang.
 
 ---
 
 ## Features
 
-- **Live horoscopes.** This week's and today's horoscope for your sign, downloaded
-  from [FreeHoroscopeAPI](https://freehoroscopeapi.com). It updates by itself:
-  the first time you open the app in a new week (or a new day, for the daily one)
-  it fetches the latest reading and saves it.
-- **Works offline.** Saved readings are shown when there's no internet, clearly
-  marked with the date they're from. If nothing is saved, it says so. It never
-  makes one up.
-- **Your sign** from your birthday, with its ASCII drawing, element and ruling planet.
+### Live (from [FreeHoroscopeAPI](https://freehoroscopeapi.com))
+
+- **Horoscopes**: this week's, today's and this month's reading for your sign.
+  The first time you open the app in a new day, week or month it fetches the
+  latest reading and saves it.
+- **Tarot**: a card of the day (the same card all day), a past-present-future
+  spread, and the full 78-card deck to browse by suit or search by name, with
+  upright and reversed meanings. The deck is downloaded once and then works offline.
+- **Planets right now**: the sign and degree of the Sun, Moon, planets and the
+  lunar nodes, with retrograde markers. Tropical (Western) or sidereal (Vedic,
+  with nakshatra and pada).
+- **Your birth planets**: the same chart for noon on your birthday.
+- **Sun and Moon** for your city: dawn, sunrise, solar noon, sunset, dusk, day
+  length, golden hour, moonrise, moonset, Moon phase and Rahu Kaal.
+- **Panchang**: the day's tithi, nakshatra, yoga and karana, with when each changes.
+- **Works offline.** Everything downloaded is saved. With no internet, saved data
+  is shown and marked with the date it's from. If nothing is saved, it says so.
+  It never makes one up. Failed calls are retried a couple of times with a short
+  pause first.
+
+### Classic (from the 2018 original)
+
+- **Your sign** from your birthday, with its ASCII drawing, element, ruling planet,
+  a countdown to your next birthday and your Chinese zodiac animal.
 - **About you**: personality notes, picked from your birthday the same way the
   original did.
 - **Fortune cookie**: a random fortune from the original collection.
 - **Lucky numbers**: the original formula.
-- **Love compatibility** for all 78 sign pairs.
+- **Love compatibility** for all 78 sign pairs, plus how your elements mix.
 - **People book**: everyone who got a reading on this computer, with birthday
   search and delete (the old "administrator tools").
 - **Remembers you**: next time it says "Welcome back" and goes straight to your sign.
+
+### Settings
+
+- **Location**: pick from a list of 35 cities, or type latitude and longitude.
+  Only needed for Sun and Moon and the Panchang. Nothing is detected automatically.
+- **Zodiac system**: tropical or sidereal.
+- **Clock**: 24-hour or 12-hour.
 
 ### What changed from the original
 
@@ -96,9 +120,13 @@ cmake --build build --config Release
 
 ```bash
 fortune --sign leo                 # this week's horoscope for Leo
-fortune --sign leo --daily         # today's instead
+fortune --sign leo --daily         # today's instead (--monthly for this month's)
 fortune --birthday 2002-05-14      # find the sign for a birthday + its weekly horoscope
-fortune --offline                  # saved readings only, no internet
+fortune --tarot 3                  # draw 3 tarot cards (1-10)
+fortune --planets                  # where the planets are right now
+fortune --city london              # sunrise, sunset and the Moon for a listed city
+fortune --sun                      # the same for the city saved in Settings
+fortune --offline                  # saved data only, no internet
 fortune --help
 ```
 
@@ -115,15 +143,19 @@ gcc -x c -std=gnu89 -w legacy/C_PROJEC.CPP -o legacy-fortune.exe
 
 ## Where your data is saved
 
-Readings and the people book stay on your computer, outside the repo:
+Readings, settings and the people book stay on your computer, outside the repo:
 
 | OS | Folder |
 |---|---|
 | Windows | `%APPDATA%\FortuneTeller` |
 | macOS / Linux | `~/.local/share/fortune-teller` (or `$XDG_DATA_HOME/fortune-teller`) |
 
-Set `FORTUNE_TELLER_HOME` to use a different folder. The only thing sent over the
-internet is the name of a zodiac sign, to fetch its horoscope.
+Set `FORTUNE_TELLER_HOME` to use a different folder.
+
+What's sent over the internet: a zodiac sign name (horoscopes), the zodiac system
+(planets), and, only if you choose a location, its coordinates (Sun and Moon,
+Panchang). For your birth planets, your birth date is sent. Names and the people
+book never leave your computer.
 
 ---
 
@@ -133,9 +165,12 @@ internet is the name of a zodiac sign, to fetch its horoscope.
 src/
   main.cpp          command-line options, starts the app
   App.cpp           the interactive menus
-  Horoscope.cpp     live readings + the weekly/daily cache
+  Horoscope.cpp     live readings + the daily/weekly/monthly cache
+  Tarot.cpp         the deck, draws, card of the day, search
+  Sky.cpp           planets, Sun and Moon, Panchang, cities and settings
+  Api.cpp           API calls with retries + the JSON cache
   Http.cpp          HTTPS: WinHTTP on Windows, libcurl elsewhere
-  Json.cpp          reads the API's JSON
+  Json.cpp          a small JSON parser
   Zodiac.cpp        signs, date ranges, compatibility pairs
   Date.cpp          calendar maths, ages, ISO weeks
   Readings.cpp      about you, lucky numbers, fortunes, compatibility
@@ -146,8 +181,8 @@ legacy/             the original 2018 program, unchanged
 tools/
   extract_legacy.py rebuilds src/LegacyData.cpp from legacy/
 tests/
-  unit_tests.cpp    dates, signs, pairs, JSON, cache, people book
-  smoke_test.cmake  runs the real program with scripted input (offline)
+  unit_tests.cpp    dates, signs, pairs, JSON, caches, tarot, planets, settings
+  smoke_test.cmake  runs the real program with scripted input and saved API answers (offline)
 ```
 
 ## Tests
@@ -162,8 +197,9 @@ The tests never use the internet. CI runs them on Windows, macOS and Linux.
 
 ## Credits
 
-Horoscopes are [Powered by FreeHoroscopeAPI](https://freehoroscopeapi.com).
+Horoscopes, tarot, planetary positions, Sun and Moon times and the Panchang are
+[Powered by FreeHoroscopeAPI](https://freehoroscopeapi.com).
 
-For fun only. Please don't make life decisions based on a console app. 🙂
+For fun only. Please don't make life decisions based on a console app.
 
 Released under the [MIT License](LICENSE).

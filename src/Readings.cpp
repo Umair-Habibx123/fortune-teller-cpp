@@ -35,3 +35,17 @@ std::string fortuneCookie() {
 const std::string& compatibility(Sign a, Sign b) {
     return legacy::kLove[static_cast<std::size_t>(compatibilityIndex(a, b))];
 }
+
+std::string chineseAnimal(int year) {
+    static const char* animals[] = {"Rat", "Ox", "Tiger", "Rabbit", "Dragon", "Snake", "Horse", "Goat", "Monkey", "Rooster", "Dog", "Pig"};
+    return animals[((year - 4) % 12 + 12) % 12];  // 2020 was a Rat year
+}
+
+std::string elementHarmony(Sign a, Sign b) {
+    const std::string ea = info(a).element, eb = info(b).element;
+    if (ea == eb) return "Both " + ea + " signs: you see the world the same way.";
+    auto pair = [&](const char* x, const char* y) { return (ea == x && eb == y) || (ea == y && eb == x); };
+    if (pair("Fire", "Air")) return "Fire and Air: air feeds the fire. A lively, natural match.";
+    if (pair("Earth", "Water")) return "Earth and Water: water nourishes the earth. A steady, natural match.";
+    return ea + " and " + eb + ": different elements, so it takes more effort to understand each other.";
+}

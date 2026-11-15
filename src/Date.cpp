@@ -115,3 +115,17 @@ std::string isoWeek(const Date& d) {
     std::snprintf(buf, sizeof buf, "%04d-W%02d", thursday.year, week);
     return buf;
 }
+
+long long daysBetween(const Date& a, const Date& b) {
+    return daysFromCivil(b.year, b.month, b.day) - daysFromCivil(a.year, a.month, a.day);
+}
+
+int daysUntilBirthday(const Date& birth, const Date& today) {
+    for (int year = today.year; year <= today.year + 1; ++year) {
+        Date next{year, birth.month, birth.day};
+        if (!isValidDate(next)) next.day = 28;  // 29 February in a non-leap year
+        const long long d = daysBetween(today, next);
+        if (d >= 0) return static_cast<int>(d);
+    }
+    return 0;
+}

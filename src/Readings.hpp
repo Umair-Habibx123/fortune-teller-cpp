@@ -17,3 +17,11 @@ std::string fortuneCookie();
 
 // The love-compatibility text for two signs.
 const std::string& compatibility(Sign a, Sign b);
+
+// Chinese zodiac animal by birth year. People born in January or early February
+// may belong to the previous year's animal (the Chinese year starts then).
+std::string chineseAnimal(int year);
+
+// The classic element pairing: same element, a natural match (Fire+Air,
+// Earth+Water), or a harder mix.
+std::string elementHarmony(Sign a, Sign b);

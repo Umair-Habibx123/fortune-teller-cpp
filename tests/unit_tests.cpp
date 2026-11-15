@@ -1,4 +1,5 @@
 // Small self-contained unit tests (no framework needed). Run: ctest --test-dir build
+#include <cmath>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -11,7 +12,9 @@
 #include "Json.hpp"
 #include "LegacyData.hpp"
 #include "Readings.hpp"
+#include "Sky.hpp"
 #include "Storage.hpp"
+#include "Tarot.hpp"
 #include "Zodiac.hpp"
 
 namespace {
@@ -144,6 +147,142 @@ void people() {
     fs::remove(file);
 }
 
+void setOffline() {
+#ifdef _WIN32
+    _putenv_s("FORTUNE_OFFLINE", "1");
+#else
+    setenv("FORTUNE_OFFLINE", "1", 1);
+#endif
+}
+
+void jsonParser() {
+    auto doc = Json::parse(R"( {"a":[1, -2.5e1, true, null, "xé"], "b":{"c":{}}, "d":false} )");
+    CHECK(doc.has_value());
+    if (!doc) return;
+    const Json& j = *doc;
+    CHECK(j.isObject() && j.size() == 3);
+    CHECK(j["a"].isArray() && j["a"].size() == 5);
+    CHECK(j["a"][0].num() == 1.0);
+    CHECK(j["a"][1].num() == -25.0);
+    CHECK(j["a"][2].boolean());
+    CHECK(j["a"][3].isNull());
+    CHECK(j["a"][4].str() == "x\xC3\xA9");
+    CHECK(j["b"]["c"].isObject() && j["b"]["c"].size() == 0);
+    CHECK(!j["d"].boolean(true));
+    CHECK(j["missing"]["deeper"][3].isNull());    // missing paths are safe
+    CHECK(j["a"].str("fallback") == "fallback");  // wrong type -> fallback
+    CHECK(j.has("b") && !j.has("z"));
+    CHECK(!Json::parse("{\"a\":1,}").has_value());
+    CHECK(!Json::parse("[1 2]").has_value());
+    CHECK(!Json::parse("{} trailing").has_value());
+    CHECK(!Json::parse("\"unterminated").has_value());
+    auto emoji = Json::parse("\"\\ud83d\\ude00\"");  // surrogate pair
+    CHECK(emoji && emoji->str() == "\xF0\x9F\x98\x80");
+}
+
+const char* kDeck = R"({"nhits":3,"cards":[
+ {"type":"major","name":"The Fool","name_short":"ar00","value":"0","value_int":0,"meaning_up":"Beginnings.","meaning_rev":"Recklessness.","desc":"A young man."},
+ {"type":"minor","name":"Three of Cups","name_short":"cu03","value":"three","value_int":3,"suit":"cups","meaning_up":"Friendship.","meaning_rev":"Excess.","desc":"Three maidens."},
+ {"type":"minor","name":"Queen of Swords","name_short":"swqu","value":"queen","value_int":13,"suit":"swords","meaning_up":"Clarity.","meaning_rev":"Coldness.","desc":"A queen."}]})";
+
+void tarot() {
+    namespace fs = std::filesystem;
+    const auto deck = Tarot::parseDeck(*Json::parse(kDeck));
+    CHECK(deck.size() == 3);
+    CHECK(deck.size() == 3 && deck[1].name == "Three of Cups" && deck[1].suit == "cups" && deck[1].arcana == "minor" && deck[1].value == 3);
+    CHECK(!deck.empty() && deck[0].meaningReversed == "Recklessness.");
+
+    const fs::path dir = fs::temp_directory_path() / "fortune-unit-tarot";
+    fs::remove_all(dir);
+    fs::create_directories(dir);
+    { std::ofstream(dir / "tarot-deck.json") << "2026-01-01\n" << kDeck; }
+    setOffline();
+    Tarot t(dir);
+    CHECK(t.load({2026, 11, 15}).empty() && t.ready());  // the saved deck never expires
+    const DrawnCard a = t.cardOfTheDay("Ayesha", {2026, 11, 15});
+    const DrawnCard b = t.cardOfTheDay("Ayesha", {2026, 11, 15});
+    CHECK(a.card.name == b.card.name && a.reversed == b.reversed);  // stable all day
+    std::set<std::string> seen;
+    for (int day = 1; day <= 28; ++day) seen.insert(t.cardOfTheDay("Ayesha", {2026, 2, day}).card.name);
+    CHECK(seen.size() > 1);  // but changes between days
+    const auto three = t.draw(3);
+    std::set<std::string> names;
+    for (const auto& c : three) names.insert(c.card.name);
+    CHECK(three.size() == 3 && names.size() == 3);  // no repeats in a spread
+    CHECK(t.draw(10).size() == 3);                  // can't draw more than the deck
+    CHECK(t.search("queen").size() == 1 && t.search("QUEEN OF").size() == 1);
+    CHECK(t.group("major").size() == 1 && t.group("cups").size() == 1 && t.group("wands").empty());
+
+    Tarot empty(dir / "nothing-here");
+    CHECK(!empty.load({2026, 11, 15}).empty() && !empty.ready());  // offline, nothing saved
+    fs::remove_all(dir);
+}
+
+void sky() {
+    namespace fs = std::filesystem;
+    CHECK(clockTime("2026-11-15T06:35:10+05:00", true) == "06:35");
+    CHECK(clockTime("2026-11-15T06:35:10+05:00", false) == "6:35 AM");
+    CHECK(clockTime("2026-11-15T17:02:00", false) == "5:02 PM");
+    CHECK(clockTime("2026-11-15T00:15:00", false) == "12:15 AM");
+    CHECK(clockTime("2026-11-15T12:00:00", false) == "12:00 PM");
+    CHECK(clockTime("", true) == "-");
+    CHECK(duration(38520) == "10h 42m");
+    CHECK(planetName("sun") == "Sun" && planetName("rahu") == "Rahu (north node)");
+
+    const auto doc = Json::parse(R"({"datetime":"2026-11-15T12:00:00Z","zodiac":"sidereal","bodies":{
+        "moon":{"sign":"Leo","degrees_in_sign":3.5,"retrograde":false,"nakshatra":"Magha","pada":2},
+        "sun":{"sign":"Libra","degrees_in_sign":29.1,"retrograde":false},
+        "saturn":{"sign":"Pisces","degrees_in_sign":1.0,"retrograde":true}}})");
+    CHECK(doc.has_value());
+    if (!doc) return;
+    const Planets p = parsePlanets(*doc);
+    CHECK(p.calculatedAt == "2026-11-15T12:00:00Z");
+    CHECK(p.bodies.size() == 3);
+    if (p.bodies.size() == 3) {
+        CHECK(p.bodies[0].body == "sun" && p.bodies[1].body == "moon");  // traditional order, not JSON order
+        CHECK(p.bodies[1].nakshatra == "Magha" && p.bodies[1].pada == 2);
+        CHECK(p.bodies[2].retrograde && std::fabs(p.bodies[2].degreesInSign - 1.0) < 1e-9);
+    }
+
+    CHECK(findCity("london") && findCity("london")->name == "London, UK");
+    CHECK(findCity("new y") && findCity("new y")->name == "New York, USA");
+    CHECK(!findCity("atlantis") && !findCity(""));
+
+    const fs::path file = fs::temp_directory_path() / "fortune-unit-settings.txt";
+    fs::remove(file);
+    const Settings defaults = loadSettings(file);
+    CHECK(!defaults.location && !defaults.sidereal && defaults.clock24);
+    Settings s;
+    s.location = Location{"Custom location", -33.8688, 151.2093};
+    s.sidereal = true;
+    s.clock24 = false;
+    saveSettings(file, s);
+    const Settings back = loadSettings(file);
+    CHECK(back.location && back.location->name == "Custom location");
+    CHECK(back.location && std::fabs(back.location->lat + 33.8688) < 1e-6 && std::fabs(back.location->lng - 151.2093) < 1e-6);
+    CHECK(back.sidereal && !back.clock24);
+    { std::ofstream(file) << "lat=200\nlng=10\n"; }
+    CHECK(!loadSettings(file).location);  // out-of-range coordinates are ignored
+    fs::remove(file);
+
+    const Sky noPlace(fs::temp_directory_path(), Settings{});
+    CHECK(!noPlace.sunMoon({2026, 11, 15}, {2026, 11, 15}).data);  // needs a city first
+}
+
+void extras() {
+    CHECK(daysUntilBirthday({2002, 5, 14}, {2026, 5, 14}) == 0);
+    CHECK(daysUntilBirthday({2002, 5, 14}, {2026, 5, 13}) == 1);
+    CHECK(daysUntilBirthday({2002, 5, 14}, {2026, 5, 15}) == 364);
+    CHECK(daysUntilBirthday({2000, 2, 29}, {2026, 2, 27}) == 1);  // leap-day birthdays move to 28 Feb
+    CHECK(daysUntilBirthday({2002, 1, 1}, {2026, 12, 31}) == 1);
+    CHECK(chineseAnimal(2020) == "Rat" && chineseAnimal(2002) == "Horse" && chineseAnimal(1999) == "Rabbit");
+    CHECK(elementHarmony(Sign::Aries, Sign::Leo).find("Both Fire") == 0);
+    CHECK(elementHarmony(Sign::Gemini, Sign::Leo).find("Fire and Air") == 0);
+    CHECK(elementHarmony(Sign::Cancer, Sign::Taurus).find("Earth and Water") == 0);
+    CHECK(elementHarmony(Sign::Aries, Sign::Cancer).find("different elements") != std::string::npos);
+    CHECK(HoroscopeService::url(Sign::Leo, Period::Monthly) == "https://freehoroscopeapi.com/api/v1/get-horoscope/monthly?sign=Leo");
+}
+
 }  // namespace
 
 int main() {
@@ -153,6 +292,10 @@ int main() {
     json();
     horoscopeCache();
     people();
+    jsonParser();
+    tarot();
+    sky();
+    extras();
     std::cout << g_passed << " checks passed, " << g_failed << " failed\n";
     return g_failed == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }

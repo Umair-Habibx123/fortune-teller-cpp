@@ -36,3 +36,9 @@ std::string isoWeek(const Date& d);
 
 // 0 = Monday ... 6 = Sunday
 int weekday(const Date& d);
+
+// Days from a to b (negative if b is earlier).
+long long daysBetween(const Date& a, const Date& b);
+
+// Days until the next birthday (0 = today). 29 Feb birthdays count on 28 Feb in other years.
+int daysUntilBirthday(const Date& birth, const Date& today);

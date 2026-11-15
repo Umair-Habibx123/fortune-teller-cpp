@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.15)
-project(fortune-teller VERSION 2.0.0 LANGUAGES CXX)
+project(fortune-teller VERSION 2.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -7,6 +7,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Everything except main() lives in a library so the tests can use it too.
 add_library(fortune_core STATIC
+    src/Api.cpp
     src/App.cpp
     src/Console.cpp
     src/Date.cpp
@@ -15,7 +16,9 @@ add_library(fortune_core STATIC
     src/Json.cpp
     src/LegacyData.cpp
     src/Readings.cpp
+    src/Sky.cpp
     src/Storage.cpp
+    src/Tarot.cpp
     src/Zodiac.cpp
 )
 target_include_directories(fortune_core PUBLIC src)
